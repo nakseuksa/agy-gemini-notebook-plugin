@@ -43,8 +43,42 @@ COMPLIANCE_NOTICE = (
 )
 
 
+def _is_auth_error(exc: BaseException) -> bool:
+    """Return True if `exc` indicates an expired, missing, or invalid NotebookLM session."""
+    if isinstance(exc, (FileNotFoundError, NotebookAuthRequiredError)):
+        return True
+    cls_name = type(exc).__name__.lower()
+    if any(tok in cls_name for tok in ("auth", "login", "session", "cookie", "unauth", "permission")):
+        return True
+    msg = str(exc).lower()
+    auth_markers = (
+        "auth",
+        "login",
+        "sign in",
+        "signin",
+        "cookie",
+        "session",
+        "snlm0e",
+        "csrf",
+        "401",
+        "403",
+        "unauthenticated",
+        "unauthorized",
+        "accounts.google.com",
+        "servicelogin",
+        "redirected",
+        "storage_state",
+    )
+    return any(marker in msg for marker in auth_markers)
+
+
 class NotebookAuthRequiredError(RuntimeError):
-    """Raised when no authenticated NotebookLM or GCP Enterprise session is available."""
+
+
+    def __init__(self, message: str, *, auto_refreshed: bool = False) -> None:
+        super().__init__(message)
+        self.auto_refreshed = auto_refreshed
+
 
 
 
@@ -144,6 +178,52 @@ class NotebookRpcBridge:
             return False
 
     def resolve_storage_path(self) -> Path | None:
+        """Return the newest existing `storage_state.json` path across user home and plugin fallback."""
+        if self.storage_path:
+            explicit = Path(self.storage_path).expanduser()
+            if explicit.is_file():
+                return explicit
+
+        prof = self.profile or "default"
+        candidates: list[Path] = []
+        if self.is_available():
+            with suppress(Exception):
+                from notebooklm.paths import get_storage_path
+
+                p = get_storage_path(profile=self.profile) if self.profile else get_storage_path()
+                candidates.append(Path(p))
+
+        default_home = Path(os.environ.get("NOTEBOOKLM_HOME", "~/.notebooklm")).expanduser()
+        plugin_home_auth = (
+            Path.home() / ".gemini" / "config" / "plugins" / "gemini-notebook" / ".notebooklm-auth"
+        )
+        candidates.extend(
+            [
+                default_home / "profiles" / prof / "storage_state.json",
+                default_home / "storage_state.json",
+                FALLBACK_AUTH_DIR / "profiles" / prof / "storage_state.json",
+                FALLBACK_AUTH_DIR / "storage_state.json",
+                plugin_home_auth / "profiles" / prof / "storage_state.json",
+                plugin_home_auth / "storage_state.json",
+            ]
+        )
+        existing_files: list[tuple[float, Path]] = []
+        seen: set[str] = set()
+        for cand in candidates:
+            with suppress(OSError):
+                if cand.is_file():
+                    resolved_str = str(cand.resolve())
+                    if resolved_str not in seen:
+                        seen.add(resolved_str)
+                        stat = cand.stat()
+                        if stat.st_size > 2:
+                            existing_files.append((stat.st_mtime, cand))
+        if not existing_files:
+            return None
+        existing_files.sort(key=lambda item: item[0], reverse=True)
+        return existing_files[0][1]
+
+    def _resolve_storage_path_legacy(self) -> Path | None:
         """Return the first existing `storage_state.json` path across user home and plugin fallback."""
         if self.storage_path:
             explicit = Path(self.storage_path).expanduser()
@@ -184,18 +264,14 @@ class NotebookRpcBridge:
 
     @staticmethod
     def _resolve_python_executable() -> str:
-        """Return the plugin `.venv/bin/python` executable if available, else `sys.executable`."""
+        """Return the plugin `.venv` Python executable if available, else `sys.executable`."""
+        plugin_home = Path.home() / ".gemini" / "config" / "plugins" / "gemini-notebook"
         candidates = [
             PLUGIN_ROOT / ".venv" / "bin" / "python",
             PLUGIN_ROOT / ".venv" / "bin" / "python3",
-            Path.home()
-            / ".gemini"
-            / "config"
-            / "plugins"
-            / "gemini-notebook"
-            / ".venv"
-            / "bin"
-            / "python",
+            PLUGIN_ROOT / ".venv" / "Scripts" / "python.exe",
+            plugin_home / ".venv" / "bin" / "python",
+            plugin_home / ".venv" / "Scripts" / "python.exe",
         ]
         for cand in candidates:
             with suppress(OSError):
@@ -306,14 +382,18 @@ class NotebookRpcBridge:
         venv_site_dirs = [
             str(p) for p in sorted((PLUGIN_ROOT / ".venv" / "lib").glob("python*/site-packages"))
         ]
+        win_site_dir = PLUGIN_ROOT / ".venv" / "Lib" / "site-packages"
+        if win_site_dir.is_dir():
+            venv_site_dirs.append(str(win_site_dir))
         if venv_site_dirs:
             existing_py_path = env.get("PYTHONPATH", "")
-            env["PYTHONPATH"] = ":".join(
+            env["PYTHONPATH"] = os.pathsep.join(
                 [*venv_site_dirs, str(PLUGIN_ROOT / "src"), *([existing_py_path] if existing_py_path else [])]
             )
-        venv_bin = PLUGIN_ROOT / ".venv" / "bin"
-        if venv_bin.is_dir():
-            env["PATH"] = f"{venv_bin}:{env.get('PATH', '')}"
+        for venv_bin in (PLUGIN_ROOT / ".venv" / "bin", PLUGIN_ROOT / ".venv" / "Scripts"):
+            if venv_bin.is_dir():
+                env["PATH"] = f"{venv_bin}{os.pathsep}{env.get('PATH', '')}"
+                break
 
         proc = await asyncio.create_subprocess_exec(
             *cmd,
@@ -332,6 +412,20 @@ class NotebookRpcBridge:
                 )
                 user_home_storage.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
                 shutil.copy2(fallback_storage, user_home_storage)
+                plugin_auth_storage = (
+                    Path.home()
+                    / ".gemini"
+                    / "config"
+                    / "plugins"
+                    / "gemini-notebook"
+                    / ".notebooklm-auth"
+                    / "profiles"
+                    / prof
+                    / "storage_state.json"
+                )
+                if plugin_auth_storage.resolve() != fallback_storage.resolve():
+                    plugin_auth_storage.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+                    shutil.copy2(fallback_storage, plugin_auth_storage)
 
             return {
                 "status": "authenticated",
@@ -355,13 +449,97 @@ class NotebookRpcBridge:
             "error": (
                 f"{raw_err}\n\n"
                 "Tip: Make sure you are signed in to https://notebooklm.google.com/ in your "
-                "regular browser (Chrome, Brave, Firefox, Edge, Chromium), then try again."
+                "regular browser (Chrome, Brave, Firefox, Edge, Chromium), then try again. "
+                "On Windows, Chromium browsers exclusively lock their Cookies database while open "
+                "(OS error 32)—briefly close the browser window before importing."
             ),
             "compliance_notice": COMPLIANCE_NOTICE,
         }
 
     @asynccontextmanager
     async def _open_client(self) -> AsyncIterator[Any]:
+        """Open an authenticated `NotebookLMClient` context manager with automatic cookie refresh."""
+        if not self.is_available():
+            raise RuntimeError(
+                "Optional dependency `notebooklm-py` is not installed. "
+                "Install it with `pip install -e '.[rpc]'` (or `uv sync --extra rpc`) "
+                "and run `agy-gemini-notebook login`."
+            )
+        from notebooklm import NotebookLMClient
+
+        def _build_kwargs() -> dict[str, Any]:
+            kw: dict[str, Any] = {}
+            resolved_storage = self.resolve_storage_path()
+            if self.storage_path:
+                kw["path"] = self.storage_path
+            elif resolved_storage is not None:
+                kw["path"] = str(resolved_storage)
+            if self.profile and "path" not in kw:
+                kw["profile"] = self.profile
+            return kw
+
+        async def _enter_client() -> tuple[Any, Any]:
+            ctx = NotebookLMClient.from_storage(**_build_kwargs())
+            if not hasattr(ctx, "__aenter__"):
+                ctx = await ctx
+            client_obj = await ctx.__aenter__()
+            return ctx, client_obj
+
+        ctx_mgr: Any = None
+        client: Any = None
+        refreshed_on_enter = False
+        try:
+            ctx_mgr, client = await _enter_client()
+        except Exception as exc:
+            if not _is_auth_error(exc):
+                raise
+            with suppress(Exception):
+                login_res = await self.login(browser_cookies="auto")
+                refreshed_on_enter = bool(login_res.get("authenticated"))
+            if refreshed_on_enter:
+                try:
+                    ctx_mgr, client = await _enter_client()
+                except Exception as retry_exc:
+                    raise NotebookAuthRequiredError(
+                        f"Gemini Notebook session expired and re-authentication failed ({retry_exc}). "
+                        "Call `notebook_login(browser_cookies='auto')` or sign in at https://notebooklm.google.com/.",
+                        auto_refreshed=False,
+                    ) from retry_exc
+            else:
+                raise NotebookAuthRequiredError(
+                    f"No valid Gemini Notebook (NotebookLM) session ({exc}). "
+                    "Call the `notebook_login` MCP tool, run `agy-gemini-notebook login` in your terminal, "
+                    "or set `GCP_PROJECT_NUMBER` with `gcloud auth login` for Google Cloud Enterprise.",
+                    auto_refreshed=False,
+                ) from exc
+
+        try:
+            yield client
+        except Exception as body_exc:
+            await ctx_mgr.__aexit__(type(body_exc), body_exc, body_exc.__traceback__)
+            ctx_mgr = None
+            if _is_auth_error(body_exc):
+                auto_ok = False
+                if not refreshed_on_enter:
+                    with suppress(Exception):
+                        login_res = await self.login(browser_cookies="auto")
+                        auto_ok = bool(login_res.get("authenticated"))
+                raise NotebookAuthRequiredError(
+                    f"Gemini Notebook RPC authentication error ({body_exc}). "
+                    + (
+                        "Session cookies were automatically refreshed from your browser; retry the operation."
+                        if auto_ok
+                        else "Call `notebook_login(browser_cookies='auto')` to refresh your session."
+                    ),
+                    auto_refreshed=auto_ok,
+                ) from body_exc
+            raise
+        finally:
+            if ctx_mgr is not None:
+                await ctx_mgr.__aexit__(None, None, None)
+
+    @asynccontextmanager
+    async def _open_client_legacy(self) -> AsyncIterator[Any]:
         """Open an authenticated `NotebookLMClient` context manager."""
         if not self.is_available():
             raise RuntimeError(
@@ -402,6 +580,42 @@ class NotebookRpcBridge:
     # -------------------------------------------------------------------------
 
     async def list_notebooks(self) -> list[dict[str, Any]]:
+        """List notebooks via the RPC bridge (`notebooklm-py`) with automatic retry on cookie refresh."""
+        for attempt in range(2):
+            try:
+                async with self._open_client() as client:
+                    notebooks = await client.notebooks.list()
+                    result: list[dict[str, Any]] = []
+                    for nb in notebooks:
+                        created_at = getattr(nb, "created_at", None)
+                        modified_at = getattr(nb, "modified_at", None)
+                        result.append(
+                            {
+                                "notebookId": getattr(nb, "id", str(nb)),
+                                "title": getattr(nb, "title", ""),
+                                "emoji": getattr(nb, "emoji", None),
+                                "sourcesCount": getattr(nb, "sources_count", 0),
+                                "isOwner": getattr(nb, "is_owner", True),
+                                "createdAt": (
+                                    created_at.isoformat()
+                                    if hasattr(created_at, "isoformat")
+                                    else created_at
+                                ),
+                                "modifiedAt": (
+                                    modified_at.isoformat()
+                                    if hasattr(modified_at, "isoformat")
+                                    else modified_at
+                                ),
+                            }
+                        )
+                    return result
+            except NotebookAuthRequiredError as exc:
+                if attempt == 0 and getattr(exc, "auto_refreshed", False):
+                    continue
+                raise
+        return []
+
+    async def _list_notebooks_legacy(self) -> list[dict[str, Any]]:
         """List notebooks via the RPC bridge (`notebooklm-py`)."""
         async with self._open_client() as client:
             notebooks = await client.notebooks.list()

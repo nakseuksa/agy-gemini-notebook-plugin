@@ -68,3 +68,21 @@ When the user's project needs documentary research to aid technical, architectur
 1. **Open or Create a Notebook**: Invoke an existing Gemini Notebook (`notebook_invoke(target="...")`) or create a new one (`notebook_create(title="...", attach_to_workspace=True)`).
 2. **Run Research or Query Curated Sources**: Launch documentary research (`notebook_research(query="...", mode="deep", import_sources=True)`) and/or ask targeted questions over the documents in the notebook (`notebook_query` / `notebook_search_sources`).
 3. **Create Local `.md` Files in the Project**: Synthesize the relevant, decision-focused findings (with explicit notebook & source citations) into local Markdown files inside the project workspace (e.g., `docs/research/<topic>.md` or `docs/adr/<decision>.md`).
+
+## Troubleshooting, Fast Auth Recovery & Pagination Best Practices
+
+1. **Handling `Error executing tool notebook_list` / Expired Cookies When `setup_ready: true`**:
+   - `notebook_status` only checks file existence of `storage_state.json` (`has_saved_session: true`); it does **not** verify whether Google's session cookies (`SIDCC`, `__Secure-1PSIDTS`) or CSRF token (`SNlM0e`) inside the file have expired.
+   - While `NotebookRpcBridge._open_client()` now attempts an automatic 1-second cookie refresh on auth errors, if any MCP tool ever fails with `Error executing tool ...` or returns `status: "auth_required"`, **immediately call `notebook_login(browser_cookies="auto")` via `call_mcp_tool`** and retry the operation.
+   - **Never** waste steps running `uv`, `.venv/Scripts/python.exe`, `Get-CimInstance`, or `$env:PYTHONPATH` inside the workspace terminal sandbox to debug MCP errors:
+     - The plugin's `.venv` junction may point outside the active workspace sandbox, causing `OS error 5 (拒绝访问)` when invoked from `run_command`.
+     - PowerShell `$env:PYTHONPATH` in the sandbox wrapper gets rewritten to `C:\Users\...\sandbox\python=...`.
+     - `Get-CimInstance` is blocked by sandbox CIM restrictions.
+     - Always use MCP tools (`notebook_login`, `notebook_list`, `notebook_status`) directly, which run in the host MCP server process outside the workspace sandbox.
+
+2. **Listing All Notebooks Without Truncation (`page_size`)**:
+   - When the user asks to list all their Gemini Notebooks, pass `page_size=100` (or `200`) to `notebook_list(page_size=100)`.
+   - Always check `total_count` / `has_more` (or whether `count == page_size`) in the response to ensure no notebooks were truncated.
+
+3. **Formatting Large Step Outputs on Windows (`UTF-8` vs `GBK`)**:
+   - When `notebook_list` saves a large output to `.system_generated/steps/<N>/output.txt` and you parse it with a Python snippet on Windows, always include `sys.stdout.reconfigure(encoding='utf-8')` before printing so Emoji characters (`📖`, `🧮`, `🏗️`) do not raise `UnicodeEncodeError: 'gbk' codec can't encode character`.

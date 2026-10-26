@@ -17,3 +17,9 @@ When this plugin (`gemini-notebook` / **Gemini Notebook by Chryzalide**) is enab
 
 4. **Sidecar Panel Link (Antigravity 2)**:
    - Whenever you attach, switch, or update a notebook visualization in the sidecar panel, include the clickable pill link `[Gemini Notebook by Chryzalide](sidecar://gemini-notebook/notebook_context_panel/ui.html)` so the user can open the sidecar with one click.
+
+5. **Fast Auth Recovery, Pagination & Windows Sandbox Best Practices**:
+   - **Stale Cookie Recovery (`notebook_login` First)**: `notebook_status` reporting `setup_ready: true` / `has_saved_session: true` only indicates that `storage_state.json` exists on disk; Google session cookies inside it may still expire after a few hours. If `notebook_list`, `notebook_get`, `notebook_query`, or any `gemini_notebook_mcp` tool returns `Error executing tool ...` or `status: "auth_required"`, **immediately call `notebook_login(browser_cookies="auto")` via MCP** and retry the tool call.
+   - **Do Not Debug Plugin `.venv` via Sandboxed Shell**: Never run `uv`, `.venv/Scripts/python.exe`, `Get-CimInstance`, or `$env:PYTHONPATH` in the workspace terminal sandbox to troubleshoot MCP errors—the plugin's `.venv` junction targets a directory outside the workspace sandbox (`OS error 5 / 拒绝访问`). Always use the MCP tools (`notebook_login`, `notebook_status`, `notebook_list`) directly.
+   - **List All Notebooks Without Truncation**: When asked to list all notebooks, pass `page_size=100` (or `200`) to `notebook_list(page_size=100)` and check `total_count` / `has_more` so collections larger than 25 notebooks are listed in full on the first call.
+   - **Windows UTF-8 Output**: When formatting large MCP JSON step outputs via Python on Windows, always include `sys.stdout.reconfigure(encoding='utf-8')` to avoid `gbk` `UnicodeEncodeError` on notebook emojis.

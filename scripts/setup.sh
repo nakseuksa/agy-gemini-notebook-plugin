@@ -25,7 +25,7 @@ for arg in "$@"; do
 done
 
 echo "======================================================================"
-echo " 📓 Gemini Notebook by Chryzalide — Setup Workflow (v1.0.4)"
+echo " 📓 Gemini Notebook by Chryzalide — Setup Workflow (v1.0.6)"
 echo "======================================================================"
 echo ""
 
@@ -35,6 +35,8 @@ echo ""
 echo "[Step 1/5] Checking Python environment and dependencies..."
 if [[ -x "${PLUGIN_DIR}/.venv/bin/python" ]]; then
     echo "  ✓ Found existing virtual environment at ${PLUGIN_DIR}/.venv"
+elif [[ -f "${PLUGIN_DIR}/.venv/Scripts/python.exe" ]]; then
+    echo "  ✓ Found existing Windows virtual environment at ${PLUGIN_DIR}/.venv"
 elif command -v uv >/dev/null 2>&1; then
     echo "  → Creating virtual environment and syncing packages with uv..."
     (cd "${PLUGIN_DIR}" && uv sync --all-extras)
@@ -42,14 +44,30 @@ elif [[ -x "${HOME}/.local/bin/uv" ]]; then
     echo "  → Creating virtual environment and syncing packages with ~/.local/bin/uv..."
     (cd "${PLUGIN_DIR}" && "${HOME}/.local/bin/uv" sync --all-extras)
 else
-    echo "  → Creating virtual environment with python3 -m venv..."
-    python3 -m venv "${PLUGIN_DIR}/.venv"
-    "${PLUGIN_DIR}/.venv/bin/pip" install --upgrade pip
-    "${PLUGIN_DIR}/.venv/bin/pip" install -e "${PLUGIN_DIR}[rpc,dev]"
+    echo "  → Creating virtual environment with python -m venv..."
+    SYS_PY="python3"
+    if ! (command -v python3 >/dev/null 2>&1 && python3 -c "import sys" >/dev/null 2>&1); then
+        SYS_PY="python"
+    fi
+    "${SYS_PY}" -m venv "${PLUGIN_DIR}/.venv"
+    if [[ -f "${PLUGIN_DIR}/.venv/Scripts/pip.exe" ]]; then
+        "${PLUGIN_DIR}/.venv/Scripts/pip.exe" install --upgrade pip
+        "${PLUGIN_DIR}/.venv/Scripts/pip.exe" install -e "${PLUGIN_DIR}[rpc,dev]"
+    else
+        "${PLUGIN_DIR}/.venv/bin/pip" install --upgrade pip
+        "${PLUGIN_DIR}/.venv/bin/pip" install -e "${PLUGIN_DIR}[rpc,dev]"
+    fi
 fi
 
-VENV_PY="${PLUGIN_DIR}/.venv/bin/python"
-VENV_CLI="${PLUGIN_DIR}/.venv/bin/agy-gemini-notebook"
+if [[ -f "${PLUGIN_DIR}/.venv/Scripts/python.exe" ]]; then
+    VENV_PY="${PLUGIN_DIR}/.venv/Scripts/python.exe"
+    VENV_CLI="${PLUGIN_DIR}/.venv/Scripts/agy-gemini-notebook.exe"
+    VENV_PIP="${PLUGIN_DIR}/.venv/Scripts/pip.exe"
+else
+    VENV_PY="${PLUGIN_DIR}/.venv/bin/python"
+    VENV_CLI="${PLUGIN_DIR}/.venv/bin/agy-gemini-notebook"
+    VENV_PIP="${PLUGIN_DIR}/.venv/bin/pip"
+fi
 echo "  ✓ Python package ready (${VENV_PY})"
 echo ""
 
@@ -62,10 +80,10 @@ if "${VENV_PY}" -c "import rookie_cookies" >/dev/null 2>&1; then
 else
     if [[ "${CHECK_ONLY}" -eq 0 ]]; then
         echo "  → Installing 'notebooklm-py[cookies]' into ${PLUGIN_DIR}/.venv..."
-        "${PLUGIN_DIR}/.venv/bin/pip" install "notebooklm-py[cookies]>=0.1.0"
+        "${VENV_PIP}" install "notebooklm-py[cookies]>=0.1.0"
         echo "  ✓ Browser session importer ready"
     else
-        echo "  ! 'rookie-cookies' not found (run: .venv/bin/pip install 'notebooklm-py[cookies]')"
+        echo "  ! 'rookie-cookies' not found (run: ${VENV_PIP} install 'notebooklm-py[cookies]')"
     fi
 fi
 echo ""
@@ -78,8 +96,14 @@ mkdir -p "${AGY_PLUGINS_DIR}"
 if [[ -L "${AGY_PLUGIN_LINK}" || -d "${AGY_PLUGIN_LINK}" ]]; then
     echo "  ✓ Plugin link present at ${AGY_PLUGIN_LINK}"
 else
-    ln -s "${PLUGIN_DIR}" "${AGY_PLUGIN_LINK}"
-    echo "  ✓ Created symlink: ${AGY_PLUGIN_LINK} -> ${PLUGIN_DIR}"
+    if ln -s "${PLUGIN_DIR}" "${AGY_PLUGIN_LINK}" 2>/dev/null; then
+        echo "  ✓ Created symlink: ${AGY_PLUGIN_LINK} -> ${PLUGIN_DIR}"
+    elif command -v powershell.exe >/dev/null 2>&1 && command -v cygpath >/dev/null 2>&1; then
+        powershell.exe -NoProfile -Command "New-Item -ItemType Junction -Path '$(cygpath -w "${AGY_PLUGIN_LINK}")' -Target '$(cygpath -w "${PLUGIN_DIR}")'" >/dev/null
+        echo "  ✓ Created Windows directory junction: ${AGY_PLUGIN_LINK} -> ${PLUGIN_DIR}"
+    else
+        echo "  ! Could not create symlink at ${AGY_PLUGIN_LINK}"
+    fi
 fi
 
 if [[ -n "${ANTIGRAVITY_LS_ADDRESS:-}" && -n "${ANTIGRAVITY_CSRF_TOKEN:-}" ]]; then
@@ -129,7 +153,7 @@ else
         elif [[ "${AUTH_CHOICE}" == "2" ]]; then
             "${VENV_CLI}" login --gcloud
         else
-            echo "    Skipped authentication (run './scripts/setup.sh --login' or '.venv/bin/agy-gemini-notebook login' anytime)."
+            echo "    Skipped authentication (run './scripts/setup.sh --login' or '${VENV_CLI} login' anytime)."
         fi
     else
         echo "  ! Authentication not yet completed."
@@ -154,5 +178,5 @@ echo "       ('Gemini Notebook by Chryzalide') and MCP server reload."
 echo "    2. Open 'Overview -> Plugins -> Gemini Notebook by Chryzalide'"
 echo "       (or click the sidecar pill link in chat)."
 echo "    3. If not connected yet, click '🔗 Connect Session from Browser'"
-echo "       or run: .venv/bin/agy-gemini-notebook login"
+echo "       or run: ${VENV_CLI} login"
 echo "======================================================================"

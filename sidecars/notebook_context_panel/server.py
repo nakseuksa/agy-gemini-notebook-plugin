@@ -16,12 +16,19 @@ SIDECAR_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SIDECAR_DIR.parent.parent
 
 # Ensure `agy_gemini_notebook` and local `.venv` packages are importable even when
-# launched directly via system `python3 sidecars/notebook_context_panel/server.py`.
-_VENV_PY = REPO_ROOT / ".venv" / "bin" / "python"
-if _VENV_PY.is_file():
-    sys.executable = str(_VENV_PY)
+# launched directly via system `python3` or `python` on Linux, macOS, or Windows.
+for _venv_py_cand in (
+    REPO_ROOT / ".venv" / "bin" / "python",
+    REPO_ROOT / ".venv" / "Scripts" / "python.exe",
+):
+    if _venv_py_cand.is_file():
+        sys.executable = str(_venv_py_cand)
+        break
 if str(REPO_ROOT / "src") not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / "src"))
+_win_venv_site = REPO_ROOT / ".venv" / "Lib" / "site-packages"
+if _win_venv_site.is_dir() and str(_win_venv_site) not in sys.path:
+    sys.path.insert(0, str(_win_venv_site))
 for _venv_site in sorted((REPO_ROOT / ".venv" / "lib").glob("python*/site-packages")):
     if str(_venv_site) not in sys.path:
         sys.path.insert(0, str(_venv_site))

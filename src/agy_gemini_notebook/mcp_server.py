@@ -328,7 +328,7 @@ async def notebook_invoke(
 
 @mcp.tool()
 async def notebook_list(
-    page_size: int = 25,
+    page_size: int = 100,
     query: str | None = None,
     engine: str = "auto",
     workspace_dir: str | None = None,
@@ -354,6 +354,8 @@ async def notebook_list(
     return {
         "engine": used_engine,
         "count": len(notebooks[:page_size]),
+        "total_count": len(notebooks),
+        "has_more": len(notebooks) > page_size,
         "notebooks": notebooks[:page_size],
     }
 

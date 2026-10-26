@@ -49,9 +49,28 @@ async def _run_setup(args: argparse.Namespace) -> dict[str, Any]:
     try:
         plugins_dir.mkdir(parents=True, exist_ok=True)
         if not plugin_link.exists() and not plugin_link.is_symlink():
-            plugin_link.symlink_to(PLUGIN_ROOT)
-            link_status = "created"
-    except OSError as exc:
+            try:
+                plugin_link.symlink_to(PLUGIN_ROOT, target_is_directory=True)
+                link_status = "created"
+            except OSError:
+                if sys.platform == "win32":
+                    proc = await asyncio.create_subprocess_exec(
+                        "cmd",
+                        "/c",
+                        "mklink",
+                        "/J",
+                        str(plugin_link),
+                        str(PLUGIN_ROOT),
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                    )
+                    await proc.communicate()
+                    if proc.returncode != 0:
+                        raise OSError(f"mklink /J exited with {proc.returncode}") from None
+                    link_status = "created_junction"
+                else:
+                    raise
+    except Exception as exc:  # noqa: BLE001
         link_status = f"skipped ({exc})"
 
     login_result: dict[str, Any] | None = None

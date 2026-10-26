@@ -1,385 +1,164 @@
-# 📓 Gemini Notebook by Chryzalide (`agy-gemini-notebook-plugin`)
 
-![Version](https://img.shields.io/badge/version-v1.0.5-blue)
-![Python](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)
-![License](https://img.shields.io/badge/license-MIT-green)
-[![Author](https://img.shields.io/badge/author-Souryan%20Aug%C3%A9-purple)](https://souryan-auge.fr/)
+# 📓 Gemini Notebook by Chryzalide — Windows  (v1.0.6)
 
-**Invoke and pilot Gemini Notebooks (NotebookLM & NotebookLM Enterprise) from Google Antigravity 2, VS Code, Cursor, Claude Code, and the CLI.**
-
-In the Gemini web app, users can attach a **Gemini Notebook (NotebookLM)** to a conversation for grounded, source-backed context. **`Gemini Notebook by Chryzalide`** (`agy-gemini-notebook-plugin`) is an independent, open-source community plugin that brings first-class Gemini Notebook integration—plus **autonomous notebook piloting, Fast & Deep Research, and Studio Artifact generation**—directly into **Google Antigravity 2**, **VS Code**, and any MCP-compatible agent harness.
+## 1. 目标与背景
+将开源项目 **`agy-gemini-notebook-plugin`**（Gemini Notebook by Chryzalide）作为插件安装部署到 Windows 环境下的 **Google Antigravity 2**，打通本地与 **Google NotebookLM** 的双向连接，解决 Windows 环境下的路径解析、目录扫描、浏览器文件锁以及 Sidecar 模块遮蔽问题。
 
 ---
 
-## 🎬 Visual Overview & Interactive Demo
+## 2. 核心排查与修复点 (Why & How)
 
-![Gemini Notebook by Chryzalide — 4-Step Animated Demo (Setup, Grounded Q&A, Deep Research to Local Markdown, and Studio Sync)](assets/demo.gif)
-
-<details>
-<summary><strong>📸 View High-Resolution Static Previews (Sidecar Context Panel &amp; CLI Deep Research)</strong></summary>
-
-### 1. Autonomous Deep Research $\rightarrow$ Local Project `.md` Synthesis (`agy-gemini-notebook`)
-![CLI Deep Research to Local Markdown Preview](assets/cli-research-preview.png)
-
-### 2. Google Antigravity 2 Auxiliary Pane Sidecar UI (`sidecar://gemini-notebook/notebook_context_panel/ui.html`)
-<p align="center">
-  <img src="assets/sidecar-preview.png" alt="Gemini Notebook by Chryzalide Sidecar UI Preview" width="460" />
-</p>
-
-</details>
+### 🔹 修复点 1：Windows 虚拟环境与解释器启动兼容性
+* **现象/原因**：
+  * 该项目此前基于 Linux/macOS 开发，多处硬编码检查 `.venv/bin/python` 及 `.venv/lib/python*/site-packages`，环境变量路径分隔符写死为 `:`。
+  * 在 Windows 环境下，虚拟环境目录实际为 `.venv/Scripts/python.exe` 与 `.venv/Lib/site-packages`，路径分隔符应为 `;`（`os.pathsep`）。
+  * Windows 系统 PATH 中常附带 `C:\Users\<user>\AppData\Local\Microsoft\WindowsApps\python3.exe`（微软商店空占位符），在非交互调用时直接报错退出，导致回退 `python3` 失败。
+* **修复方案**：
+  * 修改 [`scripts/run_mcp.sh`](file:///c:/Users/<个人用户名>/iCloudDrive/antigravity/agy-gemini-notebook-plugin/scripts/run_mcp.sh) 和 [`scripts/setup.sh`](file:///c:/Users/<个人用户名>/iCloudDrive/antigravity/agy-gemini-notebook-plugin/scripts/setup.sh)，优先解析 `.venv/Scripts/python.exe`，并在回退系统 Python 时校验 `python3 -c "import sys"`，无效时自动使用 `python`。
+  * 修改 [`src/agy_gemini_notebook/engines/rpc_bridge.py`](file:///c:/Users/<个人用户名>/iCloudDrive/antigravity/agy-gemini-notebook-plugin/src/agy_gemini_notebook/engines/rpc_bridge.py#L186-L206) 的 [`_resolve_python_executable`](file:///c:/Users/<个人用户名>/iCloudDrive/antigravity/agy-gemini-notebook-plugin/src/agy_gemini_notebook/engines/rpc_bridge.py#L186-L206) 与 [`login`](file:///c:/Users/<个人用户名>/iCloudDrive/antigravity/agy-gemini-notebook-plugin/src/agy_gemini_notebook/engines/rpc_bridge.py#L306-L323)，补充 Windows `.venv` 结构并采用 `os.pathsep` 拼接 `PYTHONPATH` 与 `PATH`。
 
 ---
 
-## ✨ Key Features
-
-- 🎯 **Invoke Notebooks by ID, Alias, or Fuzzy Title (`notebook_invoke` & `notebook_query`)**:
-  - Attach a default notebook (plus named aliases) to your repository via `.agents/notebook.json`.
-  - Invoke any notebook on the fly by ID, workspace alias, or fuzzy title match—with optional one-step grounded Q&A and inline source citations.
-- 🔬 **Autonomous Fast & Deep Research (`notebook_research`)**:
-  - Pilot NotebookLM's **Fast Research** (`mode="fast"`), **Deep Research** (`mode="deep"`), and **Source Discovery** (`mode="discover"`) across the **Web** or **Google Drive**, and automatically import verified sources into your notebook.
-- 📝 **Documentary Research $\rightarrow$ Local Markdown Synthesis**:
-  - Turn research findings and curated notebook Q&A directly into structured, source-cited `.md` decision records and technical briefs inside your local project workspace.
-- 🏢 **Engine 1 — Official Google Cloud API (`v1alpha` Discovery Engine)**:
-  - 100% official OAuth 2.0 authentication via `gcloud auth print-access-token` (no browser cookies required).
-  - Create/get/delete/share notebooks, upload local files (`sources:uploadFile`), ingest URLs/YouTube/Drive (`sources:batchCreate`), generate Audio Overviews, and run Enterprise Grounded Q&A (`servingConfigs:answer`).
-- 💬 **Engine 2 — Full RPC Bridge (`notebooklm-py` for Consumer & Enterprise)**:
-  - Automatic Dual-Engine fallback when `GCP_PROJECT_NUMBER` is not set—giving personal Google accounts (`notebooklm.google.com`) full CRUD, file uploads, source search, grounded Q&A with inline citations, Deep Research, Notes, and Studio Artifacts (Audio Overviews, Briefing Docs, Study Guides, Mind Maps, Quizzes, Flashcards, Slide Decks).
-- 🖥️ **Multi-Environment Ready (Antigravity 2 + VS Code + Cursor + CLI)**:
-  - **Antigravity 2 Plugin**: Native MCP Server + Skill + Grounding Rule + Auxiliary Pane Sidecar UI (**Gemini Notebook by Chryzalide**).
-  - **VS Code / Cursor / Claude Code**: Portable `scripts/run_mcp.sh` wrapper + MCP Resources (`notebook://active`) & Prompts (`invoke_notebook`, `deep_research_notebook`) + `--transport stdio|sse|streamable-http`.
-  - **Standalone CLI (`agy-gemini-notebook`)**: Setup, authenticate, invoke, query, sync files, and launch Deep Research from any terminal or agent bash tool.
+### 🔹 修复点 2：Antigravity 2 语言服务 Windows 插件发现机制（实体目录 vs 联接）
+* **现象/原因**：
+  * 初次通过 Windows 目录联接（Junction，`mklink /J`）将项目链接到 `~/.gemini/config/plugins/gemini-notebook` 时，重启 Antigravity 后插件列表未显示该插件。
+  * **根因**：Antigravity 2 的 Language Server（Go 编写）使用 `os.ReadDir` 扫描 `plugins/`，Windows 下顶层目录如果是 `ReparsePoint`（联接/软链），`DirEntry.IsDir()` 返回 `false`，扫描器会直接忽略该文件夹。
+* **修复方案**：
+  * 将 `C:\Users\<个人用户名>\.gemini\config\plugins\gemini-notebook` 改造为**标准实体目录（`Mode: d-----`）**，内部将 `.venv` 通过目录联接指向工作区环境，外层保持实体结构。
+  * 同步在 [`src/agy_gemini_notebook/cli.py`](file:///c:/Users/<个人用户名>/iCloudDrive/antigravity/agy-gemini-notebook-plugin/src/agy_gemini_notebook/cli.py#L49-L85) 的 [`_run_setup`](file:///c:/Users/<个人用户名>/iCloudDrive/antigravity/agy-gemini-notebook-plugin/src/agy_gemini_notebook/cli.py#L38-L90) 中增加 Windows 实体目录安装逻辑。
+  * **验证**：Language Server RPC `GetAllPlugins` 立即成功识别 `gemini-notebook`（`disabled: false`，`isGlobal: true`）。
 
 ---
 
-## 💡 Use Cases & Workflows
-
-### 1. Documentary Research & Decision Support $\rightarrow$ Local Project `.md` Files *(Primary Workflow)*
-
-When your project needs **documentary research to support technical, architectural, or product decision-making**, the coding agent pilots a complete end-to-end research-to-documentation loop:
-
-```mermaid
-flowchart LR
-    A["1. Decision Need in Project"] --> B["2. Invoke Existing or Create New Gemini Notebook"]
-    B --> C["3. Run Deep Research or Query Existing Sources"]
-    C --> D["4. Synthesize Findings with Citations"]
-    D --> E["5. Write Local .md Files in Repository (docs/research/, docs/adr/)"]
-```
-
-1. **Open or Create a Notebook**: The agent either invokes an existing curated Gemini Notebook (`notebook_invoke(target="...")`) or creates a dedicated notebook for the topic (`notebook_create(title="...", attach_to_workspace=True)`).
-2. **Research or Query**:
-   - **New Documentary Research**: The agent launches `notebook_research(query="...", mode="deep", source="web", import_sources=True)` to discover, verify, and ingest external web or Google Drive sources into the notebook.
-   - **Existing Corpus Q&A**: Or the agent queries documents already curated inside the notebook via `notebook_query` and `notebook_search_sources`.
-3. **Generate Local Project Markdown Files**: Using the grounded answers, synthesized research report, and source citations returned by the notebook, the agent writes structured `.md` files directly inside your local project (e.g., `docs/research/vector-db-benchmark.md`, `docs/adr/004-auth-architecture.md`, comparative matrices, or implementation plans) that are directly tailored to your codebase.
-
-**Example Agent Prompt in Antigravity 2 / VS Code:**
-> *"We need to choose between WebSockets, SSE, and WebTransport for our real-time notification pipeline. Open our 'System Architecture' Gemini Notebook (or create a new one if needed), run a documentary research comparing latency, proxy compatibility, and scaling trade-offs, query the sources for our constraints, and create `docs/research/realtime-transport-decision.md` in the local project with your cited recommendations."*
+### 🔹 修复点 3：Sidecar 目录脚本名称遮蔽 Bug（Shadowing）
+* **现象/原因**：
+  * 插件安装成功后，打开右侧 Sidecar 面板，下拉列表中显示为空（`— No notebooks returned by active engine —`），控制台报 `cannot import name 'NotebookLMClient' from 'notebooklm'`。
+  * **根因**：在 `sidecars/notebook_context_panel/` 下存在历史残留脚本 `notebooklm.py`。Python 启动 `server.py` 时会将脚本所在目录加入 `sys.path[0]`，导致在执行 `from notebooklm import NotebookLMClient` 时误导入了同目录下的本地脚本，遮蔽了真正的 `notebooklm-py` 第三方库。
+* **修复方案**：
+  * 删除了冗余的 `sidecars/notebook_context_panel/notebooklm.py`。
+  * 在 [`sidecars/notebook_context_panel/server.py`](file:///c:/Users/<个人用户名>/iCloudDrive/antigravity/agy-gemini-notebook-plugin/sidecars/notebook_context_panel/server.py) 头部增加了防遮蔽保护逻辑：
+    ```python
+    if str(SIDECAR_DIR) in sys.path:
+        sys.path.remove(str(SIDECAR_DIR))
+    ```
+  * 重启 Sidecar 服务进程后，`/api/notebooks` 接口恢复正常，成功返回全部 **49 本** 笔记本。
 
 ---
 
-### 2. Persistent Domain & Specification Grounding Across Coding Sessions
-Bind your project's canonical Gemini Notebook (containing PRDs, API specifications, regulatory PDFs, and design docs) once via `.agents/notebook.json`. Whenever you ask the agent to implement a feature or verify business rules, it automatically queries `notebook_query` or `notebook_search_sources` before writing code—eliminating hallucinations and keeping every answer grounded with explicit `[Notebook Title — Source Name]` citations.
+### 🔹 修复点 4：Windows 下 Chromium 浏览器独占锁定 Cookies 数据库（OS error 32）
+* **现象/原因**：
+  * 使用 `rookie-cookies` 读取本地浏览器会话时，若 Chrome、Vivaldi、Edge 等处于打开状态，Windows 会对 `Network\Cookies` SQLite 文件施加独占共享锁（`dwShareMode = 0`），抛出 `OS error 32: 另一个程序正在使用此文件，进程无法访问`。
+* **修复方案**：
+  * 在 [`src/agy_gemini_notebook/engines/rpc_bridge.py`](file:///c:/Users/<个人用户名>/iCloudDrive/antigravity/agy-gemini-notebook-plugin/src/agy_gemini_notebook/engines/rpc_bridge.py#L355-L360) 的登录失败提示中增加针对 Windows 浏览器锁的明确指引（提醒用户在导入会话前短暂关闭浏览器窗口）。
+  * 修复了 Windows 下 `~/.notebooklm/profiles/default/storage_state.json` 的文件 ACL 权限，确保后台服务进程拥有读取权限。
 
 ---
 
-### 3. Bi-Directional Knowledge Sync (Local Repo $\leftrightarrow$ Gemini Notebook)
-Keep your shared Gemini Notebook synchronized with your repository's latest architecture docs (`README.md`, `AGENTS.md`, `docs/*.md`, PDFs) using `notebook_sync_files`. What your engineering agent documents locally becomes immediately queryable in NotebookLM by product managers, researchers, and teammates.
+### 🔹 修复点 5：笔记本列表默认分页与防截断优化
+* **优化内容**：
+  * 在 [`src/agy_gemini_notebook/mcp_server.py`](file:///c:/Users/<个人用户名>/iCloudDrive/antigravity/agy-gemini-notebook-plugin/src/agy_gemini_notebook/mcp_server.py#L328-L360) 的 [`notebook_list`](file:///c:/Users/<个人用户名>/iCloudDrive/antigravity/agy-gemini-notebook-plugin/src/agy_gemini_notebook/mcp_server.py#L328-L360) 工具中，将默认 `page_size` 由 25 提升至 100，并在响应中添加 `total_count` 和 `has_more` 字段，确保笔记本数量超过 25 时的首次查询不发生截断。
 
 ---
 
-### 4. Automated Briefings, Study Guides & Podcast Audio Overviews
-After ingesting technical documentation or completing a Deep Research session, use `notebook_generate_artifact` (`study_guide`, `briefing_doc`, `mind_map`, `quiz`, `slide_deck`) or `notebook_create_audio` (`deep-dive`, `brief`, `critique`, `debate`) to produce executive summaries and onboarding materials directly from your workspace.
+## 3. 受修改文件清单 (Files Modified)
+
+| 序号 | 文件路径 | 修改性质 | 主要改动说明 |
+| :---: | :--- | :---: | :--- |
+| 1 | [`scripts/run_mcp.sh`](file:///c:/Users/<个人用户名>/iCloudDrive/antigravity/agy-gemini-notebook-plugin/scripts/run_mcp.sh) | 修改 | 优先解析 Windows `.venv/Scripts/python.exe`，增加 `python3` 真实性校验与 `python` 回退 |
+| 2 | [`scripts/setup.sh`](file:///c:/Users/<个人用户名>/iCloudDrive/antigravity/agy-gemini-notebook-plugin/scripts/setup.sh) | 修改 | 适配 Windows 虚拟环境路径，增加 Windows 实体目录/联接安装逻辑与版本号更新 |
+| 3 | [`sidecars/notebook_context_panel/sidecar.json`](file:///c:/Users/<个人用户名>/iCloudDrive/antigravity/agy-gemini-notebook-plugin/sidecars/notebook_context_panel/sidecar.json) | 修改 | 使用跨平台启动命令，依次探测 `.venv/bin/python`、`.venv/Scripts/python.exe`、`python3` 与 `python` |
+| 4 | [`sidecars/notebook_context_panel/server.py`](file:///c:/Users/<个人用户名>/iCloudDrive/antigravity/agy-gemini-notebook-plugin/sidecars/notebook_context_panel/server.py) | 修改 | 引入 Windows `.venv` 解释器与 `Lib/site-packages`，移除当前目录以防止模块遮蔽 |
+| 5 | `sidecars/notebook_context_panel/notebooklm.py` | **删除** | 彻底移除造成 `notebooklm` 模块遮蔽的冗余脚本 |
+| 6 | [`sidecars/notebook_context_panel/ui.html`](file:///c:/Users/<个人用户名>/iCloudDrive/antigravity/agy-gemini-notebook-plugin/sidecars/notebook_context_panel/ui.html#L528) | 修改 | 更新徽标为 `Dual-Engine v1.0.6` |
+| 7 | [`src/agy_gemini_notebook/__init__.py`](file:///c:/Users/<个人用户名>/iCloudDrive/antigravity/agy-gemini-notebook-plugin/src/agy_gemini_notebook/__init__.py) | 修改 | 版本升级至 `1.0.6` |
+| 8 | [`plugin.json`](file:///c:/Users/<个人用户名>/iCloudDrive/antigravity/agy-gemini-notebook-plugin/plugin.json) | 修改 | 版本升级至 `1.0.6` |
+| 9 | [`pyproject.toml`](file:///c:/Users/<个人用户名>/iCloudDrive/antigravity/agy-gemini-notebook-plugin/pyproject.toml) | 修改 | 版本升级至 `1.0.6` |
+| 10 | [`src/agy_gemini_notebook/cli.py`](file:///c:/Users/<个人用户名>/iCloudDrive/antigravity/agy-gemini-notebook-plugin/src/agy_gemini_notebook/cli.py) | 修改 | `_run_setup` 在 Windows 下自动部署实体插件目录 |
+| 11 | [`src/agy_gemini_notebook/engines/rpc_bridge.py`](file:///c:/Users/<个人用户名>/iCloudDrive/antigravity/agy-gemini-notebook-plugin/src/agy_gemini_notebook/engines/rpc_bridge.py) | 修改 | 适配 Windows 解释器与 `os.pathsep`，增加 Windows 浏览器独占锁错误诊断指引 |
+| 12 | [`src/agy_gemini_notebook/mcp_server.py`](file:///c:/Users/<个人用户名>/iCloudDrive/antigravity/agy-gemini-notebook-plugin/src/agy_gemini_notebook/mcp_server.py) | 修改 | `notebook_list` 默认 `page_size` 调整为 100，并返回 `total_count` 和 `has_more` |
+| 13 | [`tests/test_sidecar_server.py`](file:///c:/Users/<个人用户名>/iCloudDrive/antigravity/agy-gemini-notebook-plugin/tests/test_sidecar_server.py) | 修改 | 单元测试兼顾 Windows `.venv/Scripts/python.exe` 路径校验 |
+| 14 | [`AGENTS.md`](file:///c:/Users/<个人用户名>/iCloudDrive/antigravity/agy-gemini-notebook-plugin/AGENTS.md) | 修改 | 版本基线更新为 `v1.0.6` |
+| 15 | [`README.md`](file:///c:/Users/<个人用户名>/iCloudDrive/antigravity/agy-gemini-notebook-plugin/README.md#L315-L330) | 修改 | 版本徽章更新为 `v1.0.6`，在 `## 📦 Versioning & Changelog` 中完整记录本次改动的原因与方法 |
+---
+Ran check symlinks in plugin directory
+Analyzed rpc_bridge.py:L1-100
+Analyzed rpc_bridge.py:L140-440
+Analyzed storage_state.json:L1-40
+Analyzed setup.sh:L1-120
+Analyzed mcp_server.py:L1-125
+Analyzed AGENTS.md:L1-19
+Analyzed SKILL.md:L45-70
+Analyzed mcp_server.py:L1-10
+Edited run_mcp.sh
+Analyzed run_mcp.sh:L1-30
+Analyzed rpc_bridge.py:L40-60
+Analyzed rpc_bridge.py:L320-445
+Editing rpc_bridge.py
+Edited rpc_bridge.py
+Analyzed rpc_bridge.py:L70-90
+Ran normalize plugin files to LF · Exited with code 1
+Edited rpc_bridge.py
+Analyzed rpc_bridge.py:L175-215
+Analyzed rpc_bridge.py:L390-450
+Edited rpc_bridge.py
+Edited rpc_bridge.py
+Edited rpc_bridge.py
+Edited rpc_bridge.py
+Analyzed mcp_server.py:L325-365
+Edited mcp_server.py
+Edited mcp_server.py
+Used tool: edit_file
+Ran verify Python syntax of modified files · Exited with code 1
+Ran check AST syntax of modified Python files
+Edited AGENTS.md
+Edited SKILL.md
+Edited mcp_server.py
+Edited mcp_server.py
+Edited rpc_bridge.py
+
+已完成对本次会话全过程的错误复盘、根因定位，并将修复方案与实战经验回写至 **MCP 服务端代码**、**RPC 桥接引擎**、**启动脚本**、**全局 Grounding 规则（Rule）** 以及 **Gemini Notebook 技能（Skill）** 中。
 
 ---
 
-## 🏗️ Dual-Engine Architecture
+### 26/10/2026 修正
 
-```mermaid
-flowchart LR
-    subgraph Harnesses["Agent Harnesses & IDEs"]
-        AGY["Antigravity 2 (Plugin + Sidecar)"]
-        VSC["VS Code / Cursor / Claude Code"]
-        CLI["agy-gemini-notebook CLI"]
-    end
-
-    subgraph Server["Gemini Notebook by Chryzalide"]
-        MCP["FastMCP / MCPServer (21 Tools + Resources + Prompts)"]
-    end
-
-    subgraph GCP["Engine 1: Official GCP API (v1alpha REST)"]
-        REST["discoveryengine.googleapis.com/v1alpha/.../notebooks"]
-    end
-
-    subgraph RPC["Engine 2: RPC Bridge (notebooklm-py)"]
-        NLM["notebooklm.google.com (RAG, Deep Research, Studio)"]
-    end
-
-    AGY --> MCP
-    VSC --> MCP
-    CLI --> MCP
-    MCP -->|"CRUD, Upload, Share, Audio, Answer (gcloud OAuth2)"| REST
-    MCP -->|"Full CRUD, Grounded Q&A, Deep Research, Studio (RPC)"| NLM
-```
+| 阶段 | 现象 / 错误 | 核心根因分析 |
+| :--- | :--- | :--- |
+| **1. 初次调用 `notebook_list` 失败** | 返回通用报错 `Encountered error in tool execution: Error executing tool notebook_list` | 本地虽存在数小时前保存的 `storage_state.json`，但其中的 Google 会话 Cookie（如 `SIDCC` / `__Secure-1PSIDTS`）或 `SNlM0e` CSRF 令牌已过期。而 [`NotebookRpcBridge._open_client`](file:///C:/Users/<个人用户名>/.gemini/config/plugins/gemini-notebook/src/agy_gemini_notebook/engines/rpc_bridge.py#L460-L541) 原本仅捕获 `FileNotFoundError`，未捕获 `notebooklm-py` 因 Cookie 过期抛出的认证异常，导致异常直接穿透 FastMCP 变成不透明的工具报错。 |
+| **2. `notebook_status` 误导性就绪状态** | `notebook_status` 返回 `has_saved_session: true`、`setup_ready: true` | [`has_saved_session()`](file:///C:/Users/<个人用户名>/.gemini/config/plugins/gemini-notebook/src/agy_gemini_notebook/engines/rpc_bridge.py#L257-L263) 仅检查磁盘上是否存在 `storage_state.json` 文件，不校验文件中的 Cookie 是否仍然有效；且 [`resolve_storage_path()`](file:///C:/Users/<个人用户名>/.gemini/config/plugins/gemini-notebook/src/agy_gemini_notebook/engines/rpc_bridge.py#L180-L225) 原先按固定顺序返回第一个存在的文件，而非修改时间（`mtime`）最新的会话文件。 |
+| **3. 沙盒终端调试弯路** | 在终端尝试运行 `uv run`、`.venv`、`Get-CimInstance`、`$env:PYTHONPATH` 均报错 | 1) 插件目录下的 `.venv` 是指向工作区外的目录联接（Junction），在当前工作区（`02.read`）沙盒内直接调用会触发 `OS error 5 (拒绝访问)`；<br>2) 沙盒 PowerShell 包装器会改写 `$env:PYTHONPATH`；<br>3) 实际上 MCP Server 运行在宿主进程中，遇到认证报错只需直接调用 MCP 工具 `notebook_login(browser_cookies="auto")` 即可 1 秒修复，无需通过终端排障。 |
+| **4. 列表分页截断（25 vs 49）** | 首次成功调用 `notebook_list()` 仅返回 25 个笔记本 | [`notebook_list`](file:///C:/Users/<个人用户名>/.gemini/config/plugins/gemini-notebook/src/agy_gemini_notebook/mcp_server.py#L330-L360) 默认 `page_size=25`，且返回结果中仅有截断后的 `count`，缺少 `total_count` 与 `has_more` 提示，导致二次调用 `page_size=100` 才拿到全部 49 个笔记本。 |
+| **5. Windows 终端 Emoji 编码异常** | Python 打印笔记本 Emoji 时报 `UnicodeEncodeError: 'gbk' codec can't encode character` | Windows 控制台默认使用 `gbk` 编码，Python 脚本输出含 Emoji（如 `📖`、`🧮`）的文本前需显式调用 `sys.stdout.reconfigure(encoding='utf-8')`。 |
 
 ---
 
-## ⚖️ Google Terms of Service, OAuth Policy & Dual-Engine Compliance
+### 二、 已回写的代码与脚本修正
 
-Because this plugin bridges both **Google Cloud Enterprise APIs** and **consumer Google NotebookLM**, it is designed around strict separation of credentials and transparent compliance boundaries:
+1. **自动无感刷新过期 Cookie + 异常精准捕获（[`rpc_bridge.py`](file:///C:/Users/<个人用户名>/.gemini/config/plugins/gemini-notebook/src/agy_gemini_notebook/engines/rpc_bridge.py)）**
+   - 新增 [`_is_auth_error()`](file:///C:/Users/<个人用户名>/.gemini/config/plugins/gemini-notebook/src/agy_gemini_notebook/engines/rpc_bridge.py#L46-L72) 识别各类认证/会话/CSRF/401/403/重定向异常。
+   - 升级 [`NotebookRpcBridge._open_client()`](file:///C:/Users/<个人用户名>/.gemini/config/plugins/gemini-notebook/src/agy_gemini_notebook/engines/rpc_bridge.py#L460-L541)：当检测到本地无会话或已有 `storage_state.json` 中的 Cookie 过期失效时，**自动在后台静默执行一次 `self.login(browser_cookies="auto")`** 从浏览器同步最新 Cookie 并立即重连；若在 RPC 调用期间触发刷新，[`list_notebooks()`](file:///C:/Users/<个人用户名>/.gemini/config/plugins/gemini-notebook/src/agy_gemini_notebook/engines/rpc_bridge.py#L582-L617) 会自动重试一次，实现**首次调用即无感成功**。
+   - 若自动刷新仍失败，统一抛出结构化的 [`NotebookAuthRequiredError`](file:///C:/Users/<个人用户名>/.gemini/config/plugins/gemini-notebook/src/agy_gemini_notebook/engines/rpc_bridge.py#L75-L80)，不再让 MCP 崩溃报 `Error executing tool`。
 
-1. **Zero Gemini CLI / Antigravity OAuth Siphoning**:
-   - This plugin **never** reads, extracts, or repurposes internal OAuth tokens belonging to Google Antigravity 2, Gemini CLI, or Cloud Code (`cloudcode-pa.googleapis.com`).
-2. **Zero Automated Browser Sign-In on `accounts.google.com`**:
-   - In accordance with **Google Identity's OAuth 2.0 Policy ("Use Secure Browsers")**, this plugin **never** launches a Playwright/Puppeteer/Selenium-controlled browser window on `accounts.google.com` and **never** uses stealth flags such as `--disable-blink-features=AutomationControlled`.
-3. **Engine 1 — Official Google Cloud NotebookLM Enterprise (`v1alpha` REST API) — 100% Official & Supported**:
-   - Uses standard Google Cloud OAuth 2.0 Bearer tokens (`gcloud auth login` / `gcloud auth print-access-token`) against `https://{ENDPOINT_LOCATION}-discoveryengine.googleapis.com/v1alpha/projects/{PROJECT_NUMBER}/locations/{LOCATION}/notebooks`.
-   - **Recommended for corporate, production, and strict-compliance environments.**
+2. **多路径会话同步与最新文件优选（[`rpc_bridge.py`](file:///C:/Users/<个人用户名>/.gemini/config/plugins/gemini-notebook/src/agy_gemini_notebook/engines/rpc_bridge.py)）**
+   - 升级 [`resolve_storage_path()`](file:///C:/Users/<个人用户名>/.gemini/config/plugins/gemini-notebook/src/agy_gemini_notebook/engines/rpc_bridge.py#L180-L225)：跨 `~/.notebooklm`、插件 `.notebooklm-auth` 等全部候选路径按文件修改时间（`st_mtime`）倒序选取**最新且非空**的 `storage_state.json`。
+   - 升级 [`login()`](file:///C:/Users/<个人用户名>/.gemini/config/plugins/gemini-notebook/src/agy_gemini_notebook/engines/rpc_bridge.py#L414-L428)：登录成功后同步写入用户主目录与插件目录，防止多处会话文件不一致。
 
-> [!WARNING]
-> **Engine 2 (`rpc_bridge.py` / `notebooklm-py`) — Unofficial Web RPC Grey-Area Notice**:
-> Consumer Google NotebookLM (`notebooklm.google.com`) does not yet offer a public OAuth 2.0 API. To support personal Google accounts, grounded conversational RAG, and Deep Research, **Engine 2** imports cookies from a real system browser session where you are already signed in (`--browser-cookies auto|chrome|brave|firefox|edge|chromium|...`) and communicates with `notebooklm.google.com`'s internal `batchexecute` RPC endpoints via `notebooklm-py`.
->
-> Because Google's Terms of Service generally restrict unauthorized automated access to non-public web endpoints, **Engine 2 operates in a technical "grey area"** (similar to community NotebookLM MCP clients):
-> - Use Engine 2 **at your own discretion** for personal workflows, experimentation, and low-frequency interactive queries from your IDE.
-> - Avoid high-volume automated scraping or bulk unattended polling on personal Google accounts.
-> - For strict organizational compliance, configure **Engine 1 (`GCP_PROJECT_NUMBER` + `gcloud auth login`)**.
+3. **扩大默认分页并返回总数元数据（[`mcp_server.py`](file:///C:/Users/<个人用户名>/.gemini/config/plugins/gemini-notebook/src/agy_gemini_notebook/mcp_server.py)）**
+   - 将 [`notebook_list`](file:///C:/Users/<个人用户名>/.gemini/config/plugins/gemini-notebook/src/agy_gemini_notebook/mcp_server.py#L330-L360) 的默认 `page_size` 从 `25` 提升至 `100`，并在返回值中新增 `"total_count"` 和 `"has_more"` 字段，确保单次调用即可完整罗列全部笔记本。
+
+4. **优先加载插件本地源码（[`run_mcp.sh`](file:///C:/Users/<个人用户名>/.gemini/config/plugins/gemini-notebook/scripts/run_mcp.sh)）**
+   - 在 [`scripts/run_mcp.sh`](file:///C:/Users/<个人用户名>/.gemini/config/plugins/gemini-notebook/scripts/run_mcp.sh#L7-L16) 顶部提前导出 `export PYTHONPATH="${PLUGIN_DIR}/src..."`，确保即使 `.venv` 是跨目录 Junction，MCP Server 也始终优先加载插件目录下的最新代码。
 
 ---
 
-## 🚀 Installation & Setup Workflow
+### 三、 已回写的规则（Rule）与技能（Skill）资源
 
-To make installation and first-time onboarding effortless across **Antigravity 2**, **VS Code**, **Cursor**, and the CLI, **Gemini Notebook by Chryzalide** ships with a **5-step Setup Workflow** (`./scripts/setup.sh` and `agy-gemini-notebook setup`).
+1. **全局插件规则 [`rules/AGENTS.md`](file:///C:/Users/<个人用户名>/.gemini/config/plugins/gemini-notebook/rules/AGENTS.md#L20-L25)**
+   - 新增第 5 条 **Fast Auth Recovery, Pagination & Windows Sandbox Best Practices**：
+     - 明确指出 `notebook_status` 的 `setup_ready: true` 仅代表文件存在，遇到任何 MCP 工具报错时**第一时间直接调用 `notebook_login(browser_cookies="auto")`**。
+     - **严禁**在工作区终端沙盒内运行 `uv`、`.venv/Scripts/python.exe`、`Get-CimInstance` 或 `$env:PYTHONPATH` 去调试插件环境。
+     - 罗列全部笔记本时显式传入 `page_size=100` 并检查 `total_count` / `has_more`。
+     - Windows 下用 Python 处理含 Emoji 的大文本输出时强制加上 `sys.stdout.reconfigure(encoding='utf-8')`。
 
-```mermaid
-flowchart LR
-    S1["1. Clone & Python .venv"] --> S2["2. Cookie Reader Check (rookie-cookies)"]
-    S2 --> S3["3. Register Plugin in Antigravity 2"]
-    S3 --> S4["4. Connect Browser Session or gcloud OAuth"]
-    S4 --> S5["5. Reload IDE & Attach Notebook"]
-```
-
-### Option 1: Automated 1-Command Setup *(Recommended)*
-
-Clone the repository and run `./scripts/setup.sh`:
-
-```bash
-git clone https://github.com/Chryzalide/agy-gemini-notebook-plugin.git
-cd agy-gemini-notebook-plugin
-./scripts/setup.sh --login
-```
-
-What `./scripts/setup.sh` does automatically:
-1. **[Step 1/5] Python Environment & Dependencies**: Creates `.venv` (via `uv` or `python3 -m venv`) and installs `agy-gemini-notebook-plugin[rpc,dev]` (including `notebooklm-py[cookies]`).
-2. **[Step 2/5] Local Browser Session Reader Verification**: Verifies `rookie-cookies` so the plugin can import your existing session in ~1 second without downloading a 300 MB Playwright Chromium binary or automating `accounts.google.com`.
-3. **[Step 3/5] Antigravity 2 Plugin Registration**: Creates `~/.gemini/config/plugins/gemini-notebook` and enables **Gemini Notebook by Chryzalide** via the Antigravity 2 Language Server if running.
-4. **[Step 4/5] 1-Second Session Connection**:
-   - **Personal / Workspace Google Account (`notebooklm.google.com` — Engine 2)**: Imports your existing authenticated session from Chrome, Brave, Firefox, Edge, Chromium, Vivaldi, Arc, or Safari (`--browser-cookies auto`). You only need to be logged into `https://notebooklm.google.com/` in your normal browser.
-   - **Google Cloud NotebookLM Enterprise (`v1alpha` REST — Engine 1)**: Checks `GCP_PROJECT_NUMBER` and `gcloud auth login`.
-5. **[Step 5/5] Health Verification**: Runs `agy-gemini-notebook status` to confirm `setup_ready: true`.
-
-> [!IMPORTANT]
-> **Reload Antigravity 2 Once After Initial Installation**: When a new plugin or sidecar is added to `~/.gemini/config/plugins/`, reload or restart **Antigravity 2** once so the IDE starts the **Gemini Notebook by Chryzalide** Sidecar HTTP server and MCP server.
-
----
-
-### Option 2: Step-by-Step Manual Setup Checklist
-
-If you prefer to execute each setup action manually:
-
-1. **Install the Python environment**:
-   ```bash
-   uv sync --all-extras
-   ```
-2. **Register the plugin in Google Antigravity 2**:
-   ```bash
-   mkdir -p ~/.gemini/config/plugins
-   ln -s "$(pwd)" ~/.gemini/config/plugins/gemini-notebook
-   ```
-3. **Authenticate your preferred engine**:
-   - **Engine 1 (Official Google Cloud NotebookLM Enterprise — `v1alpha` REST API)**:
-     ```bash
-     export GCP_PROJECT_NUMBER="123456789012"
-     export GCP_LOCATION="global"          # global, us, or eu
-     export GCP_ENDPOINT_LOCATION="global" # global, us, or eu
-     .venv/bin/agy-gemini-notebook login --gcloud
-     ```
-   - **Engine 2 (Personal / Workspace Google Account — `notebooklm.google.com`, Grey Area)**:
-     Make sure you are signed in to [https://notebooklm.google.com/](https://notebooklm.google.com/) in your regular browser, then import the session in 1 second:
-     ```bash
-     .venv/bin/agy-gemini-notebook login --browser-cookies auto
-     # Or specify a browser explicitly: chrome, brave, firefox, edge, chromium, vivaldi, arc, safari
-     ```
-4. **Verify readiness**:
-   ```bash
-   .venv/bin/agy-gemini-notebook status
-   ```
-5. **Reload Antigravity 2 and open the Sidecar UI**:
-   - Open **`Overview -> Plugins -> Gemini Notebook by Chryzalide`** in the top-right auxiliary pane menu, or click `[Gemini Notebook by Chryzalide](sidecar://gemini-notebook/notebook_context_panel/ui.html)` in chat.
-
----
-
-### Option 3: In-IDE Agent-Guided or 1-Click Sidecar Setup
-
-Once the plugin is linked and Antigravity 2 (or VS Code / Cursor) is running:
-- **Via the Sidecar UI (Antigravity 2)**: Open the **Gemini Notebook by Chryzalide** panel, choose your browser (`Auto-detect` / `Chrome` / `Brave` / `Firefox` / etc.), and click **"🔗 Connect Session from Browser"** (or **"☁️ Google Cloud Login (`gcloud`)"** for Engine 1).
-- **Via Chat (Antigravity 2 / VS Code / Cursor)**: Ask the agent:
-  > *"Run the Gemini Notebook setup and connect my browser session for this workspace"*
-
-The agent will automatically:
-1. Call `notebook_status` to inspect your environment.
-2. Call `notebook_login(browser_cookies="auto")` to import your active browser session in 1 second (or open `https://notebooklm.google.com/` in your system browser if you aren't logged in yet) and display the Dual-Engine compliance notice.
-3. List your notebooks (`notebook_list`) or create a new one (`notebook_create`) and bind it to `.agents/notebook.json`.
-4. Surface the clickable `[Gemini Notebook by Chryzalide](sidecar://gemini-notebook/notebook_context_panel/ui.html)` sidecar pill link.
-
----
-
-## 🔌 Multi-IDE & CLI Usage
-
-### VS Code (GitHub Copilot MCP / Cline / Roo Code) & Cursor
-Add the server to your workspace `.vscode/mcp.json` (or `.cursor/mcp.json`). Because authentication is stored centrally in `~/.notebooklm/storage_state.json` (or via `gcloud`), **connecting your session once works simultaneously across Antigravity 2, VS Code, Cursor, and the CLI**:
-
-```json
-{
-  "servers": {
-    "gemini_notebook_mcp": {
-      "type": "stdio",
-      "command": "/path/to/agy-gemini-notebook-plugin/scripts/run_mcp.sh",
-      "env": {
-        "AGY_WORKSPACE_DIR": "${workspaceFolder}"
-      }
-    }
-  }
-}
-```
-
-### Standalone CLI (`agy-gemini-notebook`)
-Use the CLI from any terminal or agent shell tool:
-
-```bash
-# Run the guided setup & health check workflow (imports existing browser session)
-agy-gemini-notebook setup --login
-
-# Check engine auth, active workspace binding, and compliance notice
-agy-gemini-notebook status
-
-# Import Google NotebookLM session from your normal browser (auto, chrome, brave, firefox, etc.)
-agy-gemini-notebook login --browser-cookies auto
-
-# Or authenticate Official Engine 1 via Google Cloud SDK
-agy-gemini-notebook login --gcloud
-
-# Invoke a notebook by fuzzy title or alias and ask a grounded question
-agy-gemini-notebook invoke "System Architecture" -q "What are the latency SLAs?"
-
-# Create a notebook and run autonomous Deep Research with source auto-import
-agy-gemini-notebook create "WebGPU Compute Patterns" --attach --alias webgpu
-agy-gemini-notebook research "WebGPU subgroup operations performance" --mode deep
-
-# Sync local markdown/PDF specs into the active notebook
-agy-gemini-notebook sync README.md docs/architecture.md
-```
-
----
-
-## 🛠️ Exposed MCP Tools (`gemini_notebook_mcp`)
-
-| Category | MCP Tool | Engine | Description |
-| :--- | :--- | :--- | :--- |
-| **Workspace & Invocation** | `notebook_status` | Local + Dual | Show active `.agents/notebook.json` binding, `setup_ready`, engine auth readiness, and compliance notice |
-| | `notebook_login` | Dual | Import an existing system browser session (`browser_cookies="auto"`), open `notebooklm.google.com` in the OS browser, or run `gcloud auth login` (never launches Playwright on `accounts.google.com`) |
-| | `notebook_attach` | Local | Attach a default notebook (or register an `--alias`) to the workspace |
-| | `notebook_invoke` | Dual | Resolve a notebook by ID, alias, or fuzzy title, inspect sources, and optionally run a grounded query |
-| **Notebook CRUD & Sharing** | `notebook_list` | Dual | List notebooks (`v1alpha` recently viewed or RPC full list) |
-| | `notebook_get` | Dual | Retrieve notebook metadata and normalized source list |
-| | `notebook_create` | Dual | Create a new Gemini Notebook (and optionally bind it to the workspace) |
-| | `notebook_delete` | Dual | Delete one or more notebooks |
-| | `notebook_rename` | Engine 2 (RPC) | Rename an existing notebook |
-| | `notebook_share` | Dual | Share a notebook with users or toggle public link sharing |
-| **Sources & Code Sync** | `notebook_sync_files` | Dual | Upload local workspace files (`.md`, `.pdf`, `.txt`, `.docx`, etc.) into a notebook |
-| | `notebook_add_source` | Dual | Ingest a web URL, raw text, YouTube video, or Google Drive document |
-| | `notebook_delete_sources` | Dual | Delete specific sources from a notebook |
-| | `notebook_search_sources` | Engine 2 (RPC) | Keyword/semantic search across sources inside a notebook |
-| | `notebook_get_source_text` | Engine 2 (RPC) | Extract the full indexed plain text of a specific source |
-| **Grounded Q&A & Research** | `notebook_query` | Dual | Ask a grounded RAG question with inline citations (and optionally save as a note) |
-| | `notebook_research` | Engine 2 (RPC) | Launch **Fast Research** (`fast`), **Deep Research** (`deep`), or **Source Discovery** (`discover`) on Web or Drive |
-| | `notebook_research_status` | Engine 2 (RPC) | Poll or cancel an asynchronous research task and auto-import discovered sources |
-| **Studio Artifacts & Notes** | `notebook_create_audio` | Dual | Generate a podcast **Audio Overview** |
-| | `notebook_generate_artifact` | Engine 2 (RPC) | Generate a Briefing Doc, Study Guide, Mind Map, Quiz, Flashcards, or Slide Deck |
-| | `notebook_notes` | Engine 2 (RPC) | List, create, update, or delete persistent notes inside a notebook |
-
----
-
-## 📦 Versioning & Changelog
-
-This project follows strict, transparent versioning. **Every version update and change made to the repository must be documented, explained, and recorded in this section of `README.md`** (and kept synchronized across `pyproject.toml`, `plugin.json`, and `src/agy_gemini_notebook/__init__.py`).
-
-### `v1.0.5` (2026-10-22) — Visual Demonstration Suite (Animated Walkthrough GIF, Sidecar UI & CLI Deep Research Previews)
-
-- **Animated 4-Step Walkthrough GIF & High-DPI Previews (`assets/demo.gif`, `assets/sidecar-preview.png`, `assets/cli-research-preview.png`, `README.md`)**:
-  - **Why**: Visitors, contributors, and community listings (GitHub, Reddit, Hacker News, LinkedIn, X/Twitter, and MCP directories) need an immediate, visual demonstration of how the Antigravity 2 Sidecar UI (`sidecar://gemini-notebook/notebook_context_panel/ui.html`) and the `agy-gemini-notebook` CLI work together across setup, grounded Q&A, autonomous Deep Research $\rightarrow$ local `.md` synthesis, and Studio artifact generation.
-  - **How**: Rendered a 4-step animated walkthrough (`assets/demo.gif`) and standalone high-resolution previews (`assets/sidecar-preview.png` and `assets/cli-research-preview.png`) directly from the live Dark Mode `sidecars/notebook_context_panel/ui.html` layout and CLI output, and embedded them into a new `## 🎬 Visual Overview & Interactive Demo` section at the top of `README.md`.
-
-### `v1.0.4` (2026-10-22) — Google Sign-In Policy Compliance, 1-Click Local Browser Session Import & Explicit Grey-Area Alerts
-
-- **Elimination of Automated Playwright Sign-In on `accounts.google.com` (`src/agy_gemini_notebook/engines/rpc_bridge.py`, `pyproject.toml`, `scripts/setup.sh`)**:
-  - **Why**: Previously, `notebook_login` invoked `notebooklm login` without `--browser-cookies`, which spawned a Playwright-controlled Chromium browser on `accounts.google.com` using `--disable-blink-features=AutomationControlled` and `ignore_default_args=["--enable-automation"]`. Automating Google's sign-in page with stealth flags contravenes Google Identity's OAuth 2.0 "Use Secure Browsers" policy and required a 300 MB Playwright Chromium download.
-  - **How**: Switched `pyproject.toml` from `notebooklm-py[browser]` to `notebooklm-py[cookies]` (`rookie-cookies`) and refactored `NotebookRpcBridge.login()` so it **never** launches Playwright against `accounts.google.com`. Instead, it imports existing authenticated cookies from the user's real OS browser (`--browser-cookies auto|chrome|brave|firefox|edge|chromium|vivaldi|arc|safari`) in ~1 second, supports `open_system_browser=True` (via Python's `webbrowser.open("https://notebooklm.google.com/")`) so the user signs in exclusively inside their genuine system browser, and supports `gcloud=True` (`gcloud auth login`) for Engine 1.
-- **Explicit ToS & Grey-Area Compliance Notices Across UI, MCP, CLI & Docs (`rpc_bridge.py`, `mcp_server.py`, `sidecars/notebook_context_panel/ui.html`, `README.md`, `SKILL.md`, `rules/AGENTS.md`)**:
-  - **Why**: While Engine 1 (`discoveryengine.googleapis.com/v1alpha`) is 100% official Google Cloud OAuth 2.0, consumer `notebooklm.google.com` does not yet offer a public OAuth API and relies on internal `batchexecute` web RPCs (a ToS grey area). Users need transparent, prominent warnings before choosing between Engine 1 and Engine 2.
-  - **How**: Added `COMPLIANCE_NOTICE` to `notebook_status`, `notebook_login`, and `auth_required` MCP responses; added a dedicated `## ⚖️ Google Terms of Service, OAuth Policy & Dual-Engine Compliance` section to `README.md`; and added a visible **⚠️ Compliance & Grey-Area Notice** banner plus browser selector (`#cookie-browser-select`), **"🔗 Connect Session from Browser"**, **"🌐 Open notebooklm.google.com"**, and **"☁️ Google Cloud Login (`gcloud`)"** buttons to the Sidecar UI (`ui.html`), along with semantic `<header>`/`<main>` landmarks, explicit `<label for>` associations, and IME-safe `Enter` handling (`!e.isComposing`).
-
-### `v1.0.3` (2026-10-22) — Sidecar Dark Mode Contrast Fix & Isolated `.venv` Sign-In Subprocess Resolution
-
-- **High-Contrast Dark Mode & Namespaced CSS Tokens (`sidecars/notebook_context_panel/ui.html`)**:
-  - **Why**: In Antigravity 2 Dark Mode on Linux, section headers (`h2`) and secondary labels (`color: var(--muted)`) rendered as dark gray/black on dark `#1e1f20` cards for two reasons: (1) Antigravity 2's sidecar host bridge (`/preload.js`) injects shadcn-style inline CSS custom properties onto `<html style="--muted: #18191b; --card: #1e1f20; ...">` where `--muted` is a dark surface background rather than a foreground text color, overriding `:root { --muted: ... }`, and (2) `@media (prefers-color-scheme: light)` could match inside the Linux Electron webview even when the IDE shell was dark.
-  - **How**: Replaced all generic CSS custom properties with collision-proof `--nb-*` tokens (`--nb-bg`, `--nb-card`, `--nb-card-elevated`, `--nb-border`, `--nb-text: #f3f4f6`, `--nb-text-secondary: #cbd5e1`, `--nb-heading: #d2e3fc`, `--nb-accent: #8ab4f8`), removed the `@media (prefers-color-scheme: light)` media query override, made high-contrast Dark Mode the default (`:root, [data-theme="dark"]`), and added `syncHostTheme()` to inspect `--background` luminance on `document.documentElement` when switching themes.
-- **Isolated `.venv` Python Resolution for Browser Sign-In (`src/agy_gemini_notebook/engines/rpc_bridge.py`, `sidecars/notebook_context_panel/server.py`, `sidecars/notebook_context_panel/notebooklm.py`)**:
-  - **Why**: Clicking **"🔑 Sign In to Google NotebookLM"** in the Sidecar UI failed with `/usr/bin/python3: No module named notebooklm` because `sidecar.json` launches `server.py` using the system `python3` (`/usr/bin/python3`). Although `server.py` added `.venv/lib/python*/site-packages` to `sys.path` in-memory, `NotebookRpcBridge.login()` spawned `[sys.executable, "-m", "notebooklm", "login"]` in a child process where `sys.executable` was still `/usr/bin/python3`.
-  - **How**: Added `NotebookRpcBridge._resolve_python_executable()` to resolve `PLUGIN_ROOT / ".venv" / "bin" / "python"` (and inject `.venv` `PYTHONPATH`/`PATH`), updated `server.py` to point `sys.executable` to `.venv/bin/python`, and added a `sidecars/notebook_context_panel/notebooklm.py` launcher shim that transparently `execve`s `.venv/bin/notebooklm` even if an already-running `server.py` process invokes `/usr/bin/python3 -m notebooklm`.
-
-### `v1.0.2` (2026-10-22) — Rebranding to "Gemini Notebook by Chryzalide", Antigravity 2 Sidecar SDK Protocol Fix & Automated 5-Step Setup Workflow
-
-- **Rebranding to `Gemini Notebook by Chryzalide` (`plugin.json`, `sidecars/notebook_context_panel/sidecar.json`, `ui.html`, `README.md`)**:
-  - **Why**: Using the bare name `"Gemini Notebook"` in the Antigravity 2 `Overview -> Plugins` menu and plugin manifest could cause ambiguity with official first-party Google plugins or branding.
-  - **How**: Renamed `displayName` in `plugin.json` and `display_name` / `ui_config.views[0].title` in `sidecars/notebook_context_panel/sidecar.json` and `ui.html` to **`Gemini Notebook by Chryzalide`**.
-- **Antigravity 2 Sidecar SDK Protocol Compliance (`sidecars/notebook_context_panel/server.py`, `sidecar.json`, `ui.html`)**:
-  - **Why**: Clicking the plugin inside `Overview -> Plugins` or clicking the sidecar pill link did nothing for three reasons: (1) Antigravity 2 assigns a dynamic port to sidecars via `ANTIGRAVITY_SIDECAR_WEB_PORT`, whereas `server.py` only checked `PORT` (defaulting to `8765`), (2) Antigravity 2 expects the sidecar to write `server_info.json` (`host`, `port`, `token`, `pid`) into `ANTIGRAVITY_EXECUTABLE_DATA_DIR` / `~/.gemini/antigravity/sidecar_data/.../data/server_info.json` and serve `/preload.js`, and (3) the sidecar pill link was missing `/ui.html` (`sidecar://gemini-notebook/notebook_context_panel/ui.html`).
-  - **How**: Updated `server.py` to bind `ANTIGRAVITY_SIDECAR_WEB_PORT` (falling back to `PORT` or `8000`), write and clean up `server_info.json`, serve `/preload.js` and `/shell.css`, support `X-Sidecar-Token` CORS/query injection, and use `"command": "python3", "args": ["server.py"]` in `sidecar.json`. Updated all sidecar pill links to `[Gemini Notebook by Chryzalide](sidecar://gemini-notebook/notebook_context_panel/ui.html)`.
-- **Automated 5-Step Setup & Onboarding Workflow (`scripts/setup.sh`, `src/agy_gemini_notebook/cli.py`, `skills/gemini-notebook/SKILL.md`, `README.md`)**:
-  - **Why & How**: Added `./scripts/setup.sh` and `agy-gemini-notebook setup [--login]` plus `Workflow 0` in `SKILL.md` and a complete visual **Installation & Setup Workflow** guide in `README.md` to walk users through environment creation, Playwright Chromium verification, Antigravity 2 plugin registration, Engine 1/2 authentication, and IDE reload verification.
-
-### `v1.0.1` (2026-10-22) — Interactive Authentication, Graceful Auth Diagnostics & Cross-Workspace Plugin Launchers
-
-- **Interactive Login Tool, CLI & Sidecar Sign-In (`mcp_server.py`, `rpc_bridge.py`, `cli.py`, `sidecars/notebook_context_panel/`)**:
-  - **Why**: When calling `notebook_create` (or any Engine 2 RPC tool) before authenticating a Google NotebookLM session or Google Cloud `v1alpha` project, `notebooklm-py` raised an unhandled `FileNotFoundError: Storage file not found`, which Antigravity 2's MCP client masked behind a generic `Encountered error in tool execution: Error executing tool notebook_create` message with no direct way to log in from the IDE.
-  - **How**: Added `NotebookAuthRequiredError` and wrapped MCP tool handlers to return structured, actionable diagnostics (`status: "auth_required"`) instead of crashing tool execution. Added the `notebook_login` MCP tool (21 tools total), the `agy-gemini-notebook login` CLI subcommand, and a **"🔑 Sign In to Google NotebookLM"** button (`POST /api/login`) in the Sidecar UI panel. Also added automatic Playwright Chromium revision bridging (`_prepare_playwright_browsers_env`) and sandbox-compatible session storage fallback (`.notebooklm-auth/storage_state.json`).
-- **Cross-Workspace Plugin Command Resolution (`mcp_config.json`, `sidecars/notebook_context_panel/sidecar.json`)**:
-  - **Why & How**: Replaced relative command paths (`scripts/run_mcp.sh` and `sidecars/notebook_context_panel/server.py`) with dynamic `$HOME/.gemini/config/plugins/gemini-notebook` resolution while preserving `AGY_WORKSPACE_DIR=$(pwd)`, ensuring the MCP server and Sidecar UI launch reliably from any workspace opened in Antigravity 2 without hardcoding machine-specific paths.
-
-### `v1.0` (2026-10-22) — Initial Stable Release
-
-- **Dual-Engine Architecture (`src/agy_gemini_notebook/engines/`)**:
-  - **Why & How**: Unifies official Google Cloud Enterprise provisioning (`gcp_enterprise_rest.py`, Discovery Engine `v1alpha` REST API authenticated via `gcloud auth print-access-token`) with the community RPC bridge (`rpc_bridge.py`, powered by `notebooklm-py` for consumer and enterprise `notebooklm.google.com` accounts). Automatically falls back to Engine 2 when `GCP_PROJECT_NUMBER` is not configured, ensuring zero-friction operation for both personal Google accounts and GCP organizations.
-- **Complete 20-Tool MCP Server, Resources & Prompts (`src/agy_gemini_notebook/mcp_server.py`)**:
-  - **Why & How**: Exposes the full lifecycle of a Gemini Notebook to any MCP client: workspace binding & invocation (`notebook_status`, `notebook_attach`, `notebook_invoke`), CRUD & sharing (`notebook_list`, `notebook_get`, `notebook_create`, `notebook_delete`, `notebook_rename`, `notebook_share`), local file synchronization & source management (`notebook_sync_files`, `notebook_add_source`, `notebook_delete_sources`, `notebook_search_sources`, `notebook_get_source_text`), grounded Q&A & autonomous research (`notebook_query`, `notebook_research`, `notebook_research_status`), and Studio deliverables & persistent notes (`notebook_create_audio`, `notebook_generate_artifact`, `notebook_notes`). Also registers MCP resources (`notebook://active`, `notebook://aliases`) and reusable MCP prompts (`invoke_notebook`, `deep_research_notebook`, `sync_workspace_docs`).
-- **Documentary Research for Decision Support $\rightarrow$ Local `.md` Synthesis (`skills/gemini-notebook/SKILL.md`, `rules/AGENTS.md`)**:
-  - **Why & How**: Enables the primary decision-support workflow where the agent opens an existing Gemini Notebook or creates a new one, runs documentary research (`notebook_research`) or queries curated notebook sources (`notebook_query`), and synthesizes the source-cited findings into structured local Markdown files (`docs/research/*.md`, ADRs, decision matrices) inside the active project workspace.
-- **Interactive Antigravity 2 Sidecar Panel (`sidecars/notebook_context_panel/`)**:
-  - **Why & How**: Provides an Auxiliary Pane web UI (`ui.html`) backed by a local HTTP server (`server.py`) with `/api/status`, `/api/notebooks`, `/api/attach`, `/api/toggle_source`, and `/api/create_notebook` endpoints—allowing 1-click notebook switching, source-level grounding filters, and inline notebook creation.
-- **Standalone CLI & Multi-IDE Transport (`src/agy_gemini_notebook/cli.py`, `scripts/run_mcp.sh`)**:
-  - **Why & How**: Adds the `agy-gemini-notebook` CLI (`status`, `list`, `invoke`, `attach`, `create`, `query`, `research`, `sync`, `audio`, `artifact`) and a portable MCP launcher supporting `stdio`, `sse`, and `streamable-http` transports across Google Antigravity 2, VS Code, Cursor, and Claude Code.
-- **Automated Test Suite (`tests/`)**:
-  - **Why & How**: Includes 16 comprehensive unit, mocked Dual-Engine, Sidecar HTTP API, and live MCP stdio handshake test suites verified with `pytest` and `ruff`.
-
----
-
-## 👤 Author
-
-**Souryan Augé**
-- 🌐 Website: [https://souryan-auge.fr/](https://souryan-auge.fr/)
-- 💻 GitHub: [@Chryzalide](https://github.com/Chryzalide)
-
----
-
-## 📄 License
-
-Distributed under the **MIT License**. Contributions are welcome!
+2. **技能指南 [`skills/gemini-notebook/SKILL.md`](file:///C:/Users/<个人用户名>/.gemini/config/plugins/gemini-notebook/skills/gemini-notebook/SKILL.md#L72-L90)**
+   - 新增 **`## Troubleshooting, Fast Auth Recovery & Pagination Best Practices`** 章节，沉淀完整的故障自愈标准作业程序（SOP），供后续所有会话读取遵循。
